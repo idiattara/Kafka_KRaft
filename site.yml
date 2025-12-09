@@ -1,0 +1,15 @@
+---
+- name: Prepare Docker runtime
+  hosts: all
+  become: true
+  roles:
+    - role: docker
+      tags: docker
+
+- name: Deploy Kafka (KRaft, 3 nœuds)
+  hosts: kafka_brokers
+  become: true
+  roles:
+    - role: kafka
+      tags: kafka
+
