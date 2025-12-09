@@ -1,0 +1,113 @@
+{% set is_controller = inventory_hostname in groups.get('kafka_controllers', []) %}
+{% set is_broker = inventory_hostname in groups.get('kafka_brokers', []) %}
+{% set _all = (groups.get('kafka_brokers', []) + groups.get('kafka_controllers', [])) %}
+{% set _fallback_id = _all.index(inventory_hostname) + 1 if inventory_hostname in _all else 1 %}
+{% set _ctrl_hosts = groups.get('kafka_controllers', []) %}
+{% set node_id = hostvars[inventory_hostname].get('node_id', _fallback_id) %}
+{% set kafka_host = hostvars[inventory_hostname].get(
+    'kafka_bind_ip',
+    hostvars[inventory_hostname].get(
+        kafka_listeners_host_var,
+        hostvars[inventory_hostname].get('ansible_host', inventory_hostname)
+    )
+) %}
+
+##################################################
+# Kafka KRaft Cluster + SSL + SASL/SCRAM
+##################################################
+
+# --- Rôle du nœud ---
+# Si tu as des contrôleurs dédiés :
+# - contrôleur seul  : controller
+# - broker seul      : broker
+# - les deux         : broker,controller
+process.roles={% if is_controller and is_broker %}broker,controller{% elif is_controller %}controller{% else %}broker{% endif %}
+
+# --- Identité du nœud ---
+node.id={{ node_id }}
+
+# --- Quorum des contrôleurs ---
+controller.quorum.voters={% for h in _ctrl_hosts -%}{{ hostvars[h].get('node_id', loop.index) }}@{{ hostvars[h].get(
+    'kafka_bind_ip',
+    hostvars[h].get(kafka_listeners_host_var, hostvars[h].get('ansible_host', h))
+) }}:{{ kafka_controller_port }}{% if not loop.last %},{% endif %}{%- endfor %}
+
+##################################################
+# Listeners
+##################################################
+
+# Broker écouté en SASL_SSL, contrôleur en PLAINTEXT (interne seulement)
+listeners=SASL_SSL://0.0.0.0:{{ kafka_broker_port }}{% if is_controller %},CONTROLLER://0.0.0.0:{{ kafka_controller_port }}{% endif %}
+
+# Adresse que les clients voient
+advertised.listeners=SASL_SSL://{{ kafka_host }}:{{ kafka_broker_port }}
+
+# Listener utilisé entre brokers
+inter.broker.listener.name=SASL_SSL
+
+# Listener du contrôleur (KRaft)
+controller.listener.names=CONTROLLER
+
+# Mapping des protocoles
+listener.security.protocol.map=SASL_SSL:SASL_SSL,CONTROLLER:PLAINTEXT
+
+##################################################
+# SASL/SCRAM (clients + inter-broker)
+##################################################
+
+# JAAS pour le listener SASL_SSL (user SCRAM créé via kafka-configs)
+listener.name.sasl_ssl.scram-sha-256.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{{ kafka_scram_user }}" password="{{ kafka_scram_password }}";
+
+# Mécanismes SASL
+sasl.enabled.mechanisms=SCRAM-SHA-256
+sasl.mechanism.inter.broker.protocol=SCRAM-SHA-256
+
+##################################################
+# SSL Configuration (pour SASL_SSL)
+##################################################
+
+# Keystore spécifique à chaque broker (à définir dans host_vars)
+ssl.keystore.location={{ kafka_ssl_keystore_location }}
+ssl.keystore.password={{ kafka_ssl_keystore_password }}
+ssl.key.password={{ kafka_ssl_key_password | default(kafka_ssl_keystore_password) }}
+
+# Truststore partagé
+ssl.truststore.location={{ kafka_ssl_truststore_location }}
+ssl.truststore.password={{ kafka_ssl_truststore_password }}
+
+# Pas d’auth mutuelle côté client (peut être ajusté si besoin)
+ssl.client.auth={{ kafka_ssl_client_auth | default('none') }}
+
+# Désactiver la vérification du CN si nécessaire (DNS/PKI pas propre)
+ssl.endpoint.identification.algorithm={{ kafka_ssl_endpoint_identification_algorithm | default('') }}
+
+##################################################
+# ACL / AUTHORIZER
+##################################################
+
+authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer
+allow.everyone.if.no.acl.found=false
+
+# Le contrôleur utilise CONTROLLER:PLAINTEXT donc principal=ANONYMOUS en interne
+# + ton admin SCRAM
+super.users=User:ANONYMOUS;User:{{ kafka_scram_user }}
+
+##################################################
+# Topics internes & logs
+##################################################
+
+log.dirs={{ kafka_data_dirs | join(',') }}
+
+num.partitions={{ kafka_num_partitions | default(3) }}
+offsets.topic.replication.factor={{ kafka_internal_replication_factor | default(3) }}
+transaction.state.log.replication.factor={{ kafka_internal_replication_factor | default(3) }}
+transaction.state.log.min.isr={{ kafka_internal_min_isr | default(2) }}
+auto.create.topics.enable={{ kafka_auto_create_topics | default('false') }}
+
+# Tuning optionnel (comme dans ton fichier single-node)
+#num.network.threads=3
+#num.io.threads=8
+#socket.send.buffer.bytes=102400
+#socket.receive.buffer.bytes=102400
+#socket.request.max.bytes=104857600
+

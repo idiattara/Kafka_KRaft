@@ -1,0 +1,11 @@
+---
+- name: Recreate Container
+  command: docker compose -f docker-compose.yml up -d --force-recreate kafka
+  args:
+    chdir: "{{ compose_workdir }}"
+
+- name: Restart kafka compose
+  command: docker compose -f docker-compose.yml restart kafka
+  args:
+    chdir: "{{ compose_workdir }}"
+

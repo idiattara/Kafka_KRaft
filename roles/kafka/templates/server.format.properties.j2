@@ -1,0 +1,27 @@
+{% set _controllers = groups.get('kafka_controllers', []) %}
+{% set _all = (groups.get('kafka_brokers', []) + _controllers) %}
+{% set _fallback_id = _all.index(inventory_hostname) + 1 if inventory_hostname in _all else 1 %}
+
+# Ce fichier est utilisé UNIQUEMENT pour :
+#   kafka-storage.sh format -t <cluster-id> -c /etc/kafka/server.properties
+# Il ne contient que les paramètres nécessaires au formatage KRaft.
+
+# 1) Rôle du nœud : ici uniquement "controller" pendant le format
+process.roles=controller
+
+# 2) Identité unique du nœud (stable, cohérente avec server.properties)
+node.id={{ hostvars[inventory_hostname].get('node_id', _fallback_id) }}
+
+# 3) Quorum KRaft : liste des controllers (dynamiquement depuis kafka_controllers)
+controller.quorum.voters={% for h in _controllers -%}
+{{ hostvars[h].get('node_id', loop.index) }}@{{ hostvars[h].get('kafka_bind_ip',
+    hostvars[h].get(kafka_listeners_host_var, hostvars[h].get('ansible_host', h))) }}:{{ kafka_controller_port }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+
+# 4) Listener interne pour le controller (Raft)
+listeners=CONTROLLER://0.0.0.0:{{ kafka_controller_port }}
+controller.listener.names=CONTROLLER
+
+# 5) Répertoire des métadonnées KRaft (là où meta.properties sera créé)
+metadata.log.dir={{ kafka_data_dirs[0] }}
+

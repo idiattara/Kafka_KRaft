@@ -1,0 +1,54 @@
+{% set is_controller = inventory_hostname in groups.get('kafka_controllers', []) %}
+{% set is_broker = inventory_hostname in groups.get('kafka_brokers', []) %}
+{% set _all = (groups.get('kafka_brokers', []) + groups.get('kafka_controllers', [])) %}
+{% set _fallback_id = _all.index(inventory_hostname) + 1 if inventory_hostname in _all else 1 %}
+{% set _ctrl_hosts = groups.get('kafka_controllers', []) %}
+{% set node_id = hostvars[inventory_hostname].get('node_id', _fallback_id) %}
+{% set kafka_host = hostvars[inventory_hostname].get(
+    'kafka_bind_ip',
+    hostvars[inventory_hostname].get(
+        kafka_listeners_host_var,
+        hostvars[inventory_hostname].get('ansible_host', inventory_hostname)
+    )
+) %}
+
+##################################################
+# Kafka KRaft Cluster - NON SECURE (PLAINTEXT)
+##################################################
+
+# Rôle du nœud
+process.roles={% if is_controller and is_broker %}broker,controller{% elif is_controller %}controller{% else %}broker{% endif %}
+
+# Identité du nœud
+node.id={{ node_id }}
+
+# Quorum voters
+controller.quorum.voters={% for h in _ctrl_hosts -%}{{ hostvars[h].get('node_id', loop.index) }}@{{ hostvars[h].get(
+    'kafka_bind_ip',
+    hostvars[h].get(kafka_listeners_host_var, hostvars[h].get('ansible_host', h))
+) }}:{{ kafka_controller_port }}{% if not loop.last %},{% endif %}{%- endfor %}
+
+##################################################
+# Listeners
+##################################################
+
+# Broker et contrôleur en PLAINTEXT
+listeners=PLAINTEXT://0.0.0.0:{{ kafka_broker_port }}{% if is_controller %},CONTROLLER://0.0.0.0:{{ kafka_controller_port }}{% endif %}
+controller.listener.names=CONTROLLER
+inter.broker.listener.name=PLAINTEXT
+
+# Adresse vue par les clients
+advertised.listeners=PLAINTEXT://{{ kafka_host }}:{{ kafka_broker_port }}
+
+##################################################
+# Logs & topics internes
+##################################################
+
+log.dirs={{ kafka_data_dirs | join(',') }}
+
+num.partitions={{ kafka_num_partitions | default(3) }}
+offsets.topic.replication.factor={{ kafka_internal_replication_factor | default(3) }}
+transaction.state.log.replication.factor={{ kafka_internal_replication_factor | default(3) }}
+transaction.state.log.min.isr={{ kafka_internal_min_isr | default(2) }}
+auto.create.topics.enable={{ kafka_auto_create_topics | default('false') }}
+

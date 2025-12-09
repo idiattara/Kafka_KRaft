@@ -1,0 +1,60 @@
+# ==== Confluent Platform 8.0.1 (Kafka 4.x) — KRaft 3-nœuds ====
+confluent_version: "8.0.1"
+
+# Ports & listeners
+kafka_broker_port: 9093
+kafka_controller_port: 9092
+kafka_listeners_host_var: "ansible_host"  # pour advertised.listeners
+
+# KRaft quorum voters (déduit de l'inventaire si non surchargé)
+kafka_controller_quorum_voters: >-
+  {%- for host in groups['kafka_brokers'] -%}
+  {{- loop.index }}@{{ hostvars[host][kafka_listeners_host_var] }}:{{ kafka_controller_port }}{%- if not loop.last -%},{%- endif -%}
+  {%- endfor -%}
+
+# Données/Logs (binds host)
+kafka_data_dirs:
+  - "/var/lib/kafka/data"
+kafka_log_dir: "/var/log/kafka"
+
+# Réglages brokers (3 nœuds)
+num_partitions: 3
+offsets_topic_replication_factor: 3
+transaction_state_log_replication_factor: 3
+transaction_state_log_min_isr: 2
+min_insync_replicas: 2
+confluent_metrics_topic_replicas: 3
+
+# Cluster ID (identique sur tous les nœuds) — génère un UUID et colle-le ici
+# docker run --rm confluentinc/cp-kafka:8.0.1 kafka-storage random-uuid
+kafka_cluster_id: "BqDDfClGSsiLEFW92f9j8w"
+
+# Répertoire de travail Compose sur les hôtes
+compose_workdir: "/opt/confluent-kraft"
+
+# JMX Exporter (Kafka SEULEMENT) — fichiers exigés dans roles/kafka/files/
+jmx_enabled: true
+jmx_agent_port_kafka: 8079
+
+container_uid: 1000   # 'appuser' dans les images Confluent
+container_gid: 1000
+
+# ==== SCRAM admin ====
+kafka_admin_iterations: 4096
+kafka_scram_user: "admin"
+kafka_scram_password: "adminpass"   # ou via vault
+
+# =========== SSL ========================
+#kafka_ssl_keystore_location: "/etc/kafka/{{ inventory_hostname_short }}.keystore.jks"
+kafka_ssl_keystore_location: "/etc/kafka/secrets/keystore.jks"
+kafka_ssl_keystore_password: "changeit"
+kafka_ssl_truststore_location: "/etc/kafka/secrets/truststore.jks"
+kafka_ssl_truststore_password: "changeit"
+
+# on est *dans* le conteneur quand kafka-configs tourne,
+# donc localhost:port broker suffit
+kafka_bootstrap_server: "localhost:{{ kafka_broker_port }}"
+
+# Secure cluster 
+sasl_enabled: false
+kafka_cluster_secured: true

@@ -1,0 +1,23 @@
+# roles/kafka/handlers/main.yml
+---
+
+- name: Recreate Container
+  docker_compose:
+    project_src: "{{ compose_workdir }}"
+    files:
+      - docker-compose.yml
+    services:
+      - kafka
+    state: present          # up -d
+    recreate: always        # --force-recreate
+
+- name: Restart kafka compose
+  docker_compose:
+    project_src: "{{ compose_workdir }}"
+    files:
+      - docker-compose.yml
+    services:
+      - kafka
+    state: present
+    restarted: true         # restart kafka
+
