@@ -1,0 +1,40 @@
+
+################################## Lancer Ansible ################################################################
+$ ansible-playbook -i inventories/production/hosts.ini site.yml  -u root   --private-key /root/.ssh/id_rsa   -K
+
+
+##########################################Connect Container #################################"
+
+$ docker exec -it kafka-kafkabok1 bash
+$ docker logs  kafka-kafkabok1
+$ docker rm -f $(docker ps -aq)
+$ docker run --rm -it --entrypoint cat confluentinc/cp-kafka:8.0.1 /etc/kafka/server.properties
+
+############ Log Docker ######################################################################################################################
+$ docker logs --tail 5000 kafka-kafkabok2
+$ docker exec -it kafka-kafkabok2 bash
+$ docker exec -it kafka-kafkabok2 bash
+
+######################### Create Topic ####################################################################################################################
+$ KAFKA_OPTS="" KAFKA_JMX_OPTS="" JMX_PORT="" kafka-topics --create   --topic test2  2 --partitions 2   --replication-factor 3 --bootstrap-server kafkabok1.eastus.cloudapp.azure.com:9092
+########################### Liste Topic############################################################################################################
+$  KAFKA_OPTS="" KAFKA_JMX_OPTS="" JMX_PORT="" kafka-topics  --bootstrap-server kafkabok3.westeurope.cloudapp.azure.com:9092 --list
+
+
+##################################### SCRAM ##################################################################################################
+
+$ docker exec -e KAFKA_OPTS="" -e KAFKA_JMX_OPTS="" -e JMX_PORT="" kafka-kafkabok1  kafka-configs --bootstrap-server localhost:9093 --describe --entity-type users
+
+###################ACL##########################"""
+
+$ ./bin/kafka-acls --bootstrap-server kafkabok3.westeurope.cloudapp.azure.com:9092 --add --allow-principal User:diama1 --operation Write --topic diama --command-config /etc/kafka/client.properties
+
+$ ./bin/kafka-configs   --bootstrap-server kafkabok3.westeurope.cloudapp.azure.com:9092   --alter   --add-config 'SCRAM-SHA-256=[password=client]'   --entity-type users   --entity-name diama2   --command-config /etc/kafka/client.properties
+
+###########################################################Config des topic interne#####################################################################
+connect-status
+connect-configs
+KAFKA_OPTS="" KAFKA_JMX_OPTS="" JMX_PORT="" kafka-configs --bootstrap-server kafkabok1.eastus.cloudapp.azure.com:9092 --alter --entity-type topics --entity-name connect-offsets --add-config cleanup.policy=compact
+
+################################################################### curl ####################################################################"
+curl -s http://contkcksql.westeurope.cloudapp.azure.com:8083/connector-plugins | jq
